@@ -1,76 +1,93 @@
 #!/bin/bash
 
-# --- 文件路径配置 ---
-# 定义源文件和目标文件的路径
+# ==============================================================================
+# 脚本：fix_core.py.sh
+# 功能：替换指定路径下的 core.py 文件，并在替换前创建备份。
+# 设计为独立脚本，接受目标路径作为参数。
+# ==============================================================================
+
+# --- 1. 参数检查与帮助信息 ---
+if [ -z "$1" ]; then
+    echo -e "\033[0;31m[错误] 用法: $0 <目标文件的完整路径>\033[0m"
+    echo ""
+    echo "示例:"
+    echo "  $0 /workspace/ComfyUI/custom_nodes/comfyui-impact-pack/modules/impact/core.py"
+    echo ""
+    echo "此脚本会尝试将 '/workspace/temp/core.py.fix' 复制到指定的目标路径。"
+    echo "如果目标文件已存在，会先将其备份为 '.bak_时间戳' 文件。"
+    exit 1
+fi
+
+TARGET_FILE="$1"
 SOURCE_FILE="/workspace/temp/core.py.fix"
-TARGET_FILE="/workspace/ComfyUI/custom_nodes/comfyui-impact-pack/modules/impact/core.py"
-# 定义备份目录和备份文件的基本名
-BACKUP_DIR="/workspace/ComfyUI/custom_nodes/comfyui-impact-pack/modules/impact"
-# 获取原始文件名（不带路径），用于构建备份文件名
-ORIGINAL_FILENAME=$(basename "$TARGET_FILE")
 
-# --- 脚本开始 ---
-
+# --- 2. 基础检查 ---
 # 检查源文件是否存在
 if [ ! -f "$SOURCE_FILE" ]; then
-    echo "错误：找不到源文件 '$SOURCE_FILE'"
-    echo "请检查路径是否正确。"
+    echo -e "\033[0;31m[致命错误] 源文件不存在: $SOURCE_FILE\033[0m"
+    echo "请确保修复文件已放置在正确的位置。"
     exit 1
 fi
 
-# 检查目标文件是否存在，如果存在则进行备份
-if [ -f "$TARGET_FILE" ]; then
-    # 生成一个精确到秒的时间戳，格式为 YYYYMMDD_HHMMSS
-    TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-    # 构建完整的备份文件名 (例如: core.py.bak_20231027_153000)
-    BACKUP_FILENAME="${ORIGINAL_FILENAME}.bak_${TIMESTAMP}"
-    
-    echo "目标文件 '$TARGET_FILE' 已存在。正在创建备份..."
-    echo "备份路径: $BACKUP_DIR/$BACKUP_FILENAME"
-    
-    # 将目标文件复制到备份目录，并命名
-    # 注意：当前用户是 root，无需 sudo
-    cp "$TARGET_FILE" "$BACKUP_DIR/$BACKUP_FILENAME"
-    
-    # 检查备份操作是否成功
+# 检查目标文件的目录是否存在，如果不存在则创建
+TARGET_DIR=$(dirname "$TARGET_FILE")
+if [ ! -d "$TARGET_DIR" ]; then
+    echo -e "\033[0;33m[提示] 目标目录 '$TARGET_DIR' 不存在，正在创建...\033[0m"
+    mkdir -p "$TARGET_DIR"
     if [ $? -ne 0 ]; then
-        echo "错误：创建备份文件失败！"
+        echo -e "\033[0;31m[错误] 无法创建目标目录 '$TARGET_DIR'。\033[0m"
         exit 1
     fi
-    
-    echo "✅ 备份成功！"
-
-    # 删除旧的（未被备份的）目标文件，为新文件腾出位置
-    echo "正在删除旧的目标文件..."
-    rm -f "$TARGET_FILE"
-     if [ $? -ne 0 ]; then
-        echo "错误：删除旧目标文件失败！"
-        exit 1
-    fi
-else
-    # 如果目标文件不存在，直接进入下一步
-    echo "提示：目标文件 '$TARGET_FILE' 不存在，将直接进行复制。"
 fi
 
-# 复制源文件到目标位置
-echo "正在将 '$SOURCE_FILE' 复制到 '$TARGET_FILE'..."
+# --- 3. 备份逻辑 ---
+if [ -f "$TARGET_FILE" ]; then
+    echo -e "\033[0;33m[信息] 目标文件 '$TARGET_FILE' 已存在。\033[0m"
+    TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+    BACKUP_FILE="${TARGET_FILE}.bak_${TIMESTAMP}"
+    
+    echo -e "\033[0;34m[操作] 正在创建备份: $BACKUP_FILE\033[0m"
+    cp "$TARGET_FILE" "$BACKUP_FILE"
+    
+    if [ $? -ne 0 ]; then
+        echo -e "\033[0;31m[错误] 备份失败！操作中止。\033[0m"
+        exit 1
+    fi
+    echo -e "\033[0;32m[成功] 备份已完成。\033[0m"
+
+    # 删除旧文件
+    echo -e "\033[0;34m[操作] 正在删除旧文件...\033[0m"
+    rm -f "$TARGET_FILE"
+    if [ $? -ne 0 ]; then
+        echo -e "\033[0;31m[警告] 删除旧文件失败，请手动检查权限或文件是否被占用。\033[0m"
+        echo "但将继续尝试复制新文件。"
+    else
+        echo -e "\033[0;32m[成功] 旧文件已删除。\033[0m"
+    fi
+else
+    echo -e "\033[0;33m[信息] 目标文件 '$TARGET_FILE' 不存在，将直接创建。\033[0m"
+fi
+
+# --- 4. 执行替换 ---
+echo -e "\033[0;34m[操作] 正在从 '$SOURCE_FILE' 复制到 '$TARGET_FILE'...\033[0m"
 cp -f "$SOURCE_FILE" "$TARGET_FILE"
 
-# 检查复制操作是否成功
-if [ $? -eq 0 ]; then
-    echo "----------------------------------------"
-    echo "✅ 文件替换成功！"
-    if [ -f "$BACKUP_DIR/$BACKUP_FILENAME" ]; then
-        echo "原始文件已备份至: $BACKUP_DIR/$BACKUP_FILENAME"
+# --- 5. 验证结果 ---
+if [ $? -eq 0 ] && [ -f "$TARGET_FILE" ]; then
+    echo ""
+    echo -e "\033[1;32m================================================\033[0m"
+    echo -e "  ✅ 文件替换成功完成!"
+    echo -e "    新文件位置: $TARGET_FILE"
+    if [ -n "$BACKUP_FILE" ]; then
+        echo -e "    原始文件备份: $BACKUP_FILE"
     fi
-    echo "新文件已放置在: $TARGET_FILE"
-    echo "----------------------------------------"
+    echo -e "\033[1;32m================================================\033[0m"
+    exit 0
 else
-    echo "----------------------------------------"
-    echo "❌ 错误：文件替换失败！"
-    echo "请检查源文件路径、目标目录的写入权限。"
-    echo "----------------------------------------"
+    echo ""
+    echo -e "\033[1;31m================================================\033[0m"
+    echo -e "  ❌ 文件替换失败!"
+    echo -e "    请检查源文件路径、目标目录的写入权限以及磁盘空间。"
+    echo -e "\033[1;31m================================================\033[0m"
     exit 1
 fi
-
-exit 0
